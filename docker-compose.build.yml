@@ -1,0 +1,44 @@
+version: '3.7'
+
+services:
+  client:
+    image: 2550705/nanolife-client:latest
+    container_name: nanolife-client
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+
+  server:
+    image: 2550705/nanolife-server:latest
+    container_name: nanolife-server
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "9000:9000"
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:11.2-alpine
+    container_name: db
+    restart: unless-stopped
+    volumes:
+      - dbdata:/data/db
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  dbdata:

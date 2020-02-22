@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout(true)
+    }
+
+    environment {
+        POSTGRES_USER = credentials('nanolife-database-username')
+        POSTGRES_PASSWORD = credentials('nanolife-database-password')
+        REGISTRY = '2550705/nanolife'
+    }
+
+    stages {
+        stage('Git') {
+            steps {
+                echo '> Checking out the Git version control ...'
+                checkout scm
+            }
+        }
+        stage('Build') {
+            steps {
+                echo '> Building the docker images ...'
+                sh 'docker-compose -f docker-compose.build.yml build'
+            }
+        }
+        stage('Push') {
+             steps {
+                withDockerRegistry([ credentialsId: "dockerhub-auth", url: "" ]) {
+                    echo '> Destroying the docker artifacts ...'
+                    sh 'docker-compose -f docker-compose.build.yml push'
+                }
+            }
+        }
+        stage('Destroy') {
+            steps {
+                echo '> Destroying the docker artifacts ...'
+                sh 'docker-compose -f docker-compose.build.yml down --rmi=all'
+                sh 'docker system prune --force'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo '> Deploying application ...'
+                sshPublisher(
+                    publishers: [sshPublisherDesc(
+                        configName: 'docker-deploy',
+                        transfers: [sshTransfer(
+                            execCommand: 'docker login -u 2550705 -p 12345_Max'
+                        ),
+                        sshTransfer(
+                            cleanRemote: false,
+                            excludes: '',
+                            execCommand: 'docker-compose -f /home/arty/deploy/docker-compose.prod.yml pull && docker-compose -f /home/arty/deploy/docker-compose.prod.yml down && docker-compose -f /home/arty/deploy/docker-compose.prod.yml up -d --force-recreate',
+                            execTimeout: 120000,
+                            flatten: false,
+                            makeEmptyDirs: false,
+                            noDefaultExcludes: false,
+                            patternSeparator: '[, ]+',
+                            remoteDirectory: '',
+                            remoteDirectorySDF: false,
+                            removePrefix: '',
+                            sourceFiles: 'docker-compose.prod.yml'
+                        )],
+                        usePromotionTimestamp: false,
+                        useWorkspaceInPromotion: false,
+                        verbose: false
+                    )]
+                 )
+            }
+        }
+    }
+    post {
+        success {
+            sh 'curl -s -X POST https://api.telegram.org/bot942095073:AAGlkBJ6d4-IVKyvbHCzLdNDaZIanStJbJk/sendMessage -d chat_id=-362016378 -d text="Cобрался, ждем ответа компонентов..."'
+        }
+        failure {
+            sh 'curl -s -X POST https://api.telegram.org/bot942095073:AAGlkBJ6d4-IVKyvbHCzLdNDaZIanStJbJk/sendMessage -d chat_id=-362016378 -d text="Поламался"'
+        }
+    }
+}
